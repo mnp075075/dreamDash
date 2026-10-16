@@ -1,25 +1,22 @@
 #include <kos.h>
 #include <dc/pvr.h>
 #include <kos/img.h>
-#include <kmg/kmg.h> 
-#include <iostream>
+#include <kmg/kmg.h>
+#include <unistd.h>
+#include <cstdio>
+#include <cmath>
+#include <vector>
 #include <string>
 
-pvr_poly_hdr_t color_poly_hdr;
-pvr_ptr_t image;
+alignas(8) pvr_poly_hdr_t texture;
+pvr_ptr_t image = nullptr;
 uint32_t image_w = 0, image_h = 0;
 
-void init_shape(pvr_list_t type) {
-    pvr_poly_cxt_t poly_cxt;
-    pvr_poly_cxt_col(&poly_cxt, type);
-    pvr_poly_compile(&color_poly_hdr, &poly_cxt);
-}
-
-void draw_image(std::string path) {
+void init_image(std::string path, pvr_list_t mode, int format, pvr_filter_mode_t filter) {
     kos_img_t img;
+    pvr_poly_cxt_t context;
     if (kmg_to_img(path.c_str(), &img) < 0) {
-        dbglog(DBG_ERROR, "[ERROR] Failed to load: %s\n",
-           path.c_str());
+        dbglog(DBG_ERROR, "[ERROR] Failed to load: %s\n", path.c_str());
         return;
     }
 
@@ -30,55 +27,62 @@ void draw_image(std::string path) {
     image_h = img.h;
     
     kos_img_free(&img, false);
+
+    pvr_poly_cxt_txr(&context, mode, format, image_w, image_h, image, filter);
+    pvr_poly_compile(&texture, &context);
 }
 
-void draw_rectangle(float x, float y, float width, float height, uint32_t color) {
-    pvr_wait_ready();
-    pvr_scene_begin();
-
-    pvr_list_begin(PVR_LIST_OP_POLY);
-
-    pvr_prim(&color_poly_hdr, sizeof(color_poly_hdr));
+void render_texture(const pvr_poly_hdr_t& source, int flags, float x, float y, std::vector<float> z, std::vector<float> u, std::vector<float> v, float width, float height, uint32_t color) {
+    pvr_prim(&source, sizeof(source));
 
     pvr_vertex_t vert;
     
-    vert.flags = PVR_CMD_VERTEX;
-    vert.x = x;
-    vert.y = y;
-    vert.z = 1.0f;
+    vert.flags = flags;
     vert.argb = color;
-    pvr_prim(&vert, sizeof(vert));
 
-    vert.x = x + width;
-    vert.y = y;
-    vert.z = 1.0f;
-    pvr_prim(&vert, sizeof(vert));
-
-    vert.x = x;
-    vert.y = y + height;
-    vert.z = 1.0f;
-    pvr_prim(&vert, sizeof(vert));
-
-    vert.flags = PVR_CMD_VERTEX_EOL;
-    vert.x = x + width;
-    vert.y = y + height;
-    vert.z = 1.0f;
-    pvr_prim(&vert, sizeof(vert));
-
-    pvr_list_finish();
-    pvr_scene_finish();
+    for (size_t i = 0; i < 4; i++) {
+        if (i == 3) vert.flags = PVR_CMD_VERTEX_EOL;
+        vert.x = (i % 2 == 0) ? x : x+width;
+        vert.y = ((i / 2) % 2 == 0) ? y : y+height;
+        vert.z = z[i];
+        vert.u = u[i];
+        vert.v = v[i];
+        pvr_prim(&vert, sizeof(vert));
+        /*
+        dbglog(DBG_DEBUG, "[DEBUG] x=%f y=%f z=%f u=%f v=%f\n", vert.x, vert.y, vert.z, vert.u, vert.v);
+        dbglog(DBG_DEBUG, "[DEBUG] header: ptr=%p size=%u\n", static_cast<const void*>(&source), static_cast<unsigned>(sizeof(source)));
+        dbglog(DBG_DEBUG, "[DEBUG] vertex: ptr=%p size=%u\n", static_cast<const void*>(&vert), static_cast<unsigned>(sizeof(vert)));
+        */
+    }
 }
 
 int main() {
     pvr_init_defaults();
-    draw_image("/romdisk/background.kmg");
+
+    std::vector<float> z_axis = {1.0f, 1.0f, 1.0f, 1.0f};
+    std::vector<float> u_axis, v_axis;
+   
+    for (size_t i = 0; i < 4; i++) {
+        u_axis.push_back((i % 2 == 0) ? 0.0f : 1.0f);
+        v_axis.push_back(((i / 2) % 2 == 0) ? 0.0f : 1.0f);
+    }
+
+    init_image("/rd/background.kmg", PVR_LIST_OP_POLY, PVR_TXRFMT_RGB565 | PVR_TXRFMT_NONTWIDDLED, PVR_FILTER_NONE);
+
+    if (!image) {
+        dbglog(DBG_ERROR, "[ERROR] Image not loaded, exiting...");
+        return -1;
+    }
+
     while (true) {
         pvr_wait_ready();
         pvr_scene_begin();
-
         pvr_list_begin(PVR_LIST_OP_POLY);
-        pvr_list_finish();
 
+        render_texture(texture, PVR_CMD_VERTEX, 0.0f, 0.0f, z_axis, u_axis, v_axis, 640.0f, 480.0f, 0xFFFFFFFF);
+
+        pvr_list_finish();
         pvr_scene_finish();
     }
+    return 0;
 }
