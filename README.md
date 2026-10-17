@@ -1,3 +1,2 @@
 # dreamDash
-A Geometry Dash demake for the SEGA Dreamcast console
-(This is currently an empty repo)
+dreamDash is a demake version of Geometry Dash ported to the SEGA Dreamcast (this is currently empty)
