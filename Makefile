@@ -7,13 +7,13 @@ all: rm-elf $(TARGET)
 include $(KOS_BASE)/Makefile.rules
 
 clean: rm-elf
-	-rm -f $(OBJS)
+	-rm -f $(OBJS) romdisk.img
 
 rm-elf:
 	-rm -f $(TARGET)
 
 $(TARGET): $(OBJS)
-	kos-c++ -o $(TARGET) $(OBJS) -lkosutils -lkmg $(KOS_LIBS)
+	kos-c++ -o $(TARGET) $(OBJS) -lkosutils -lkmg -lpng -lz $(KOS_LIBS)
 
 run: $(TARGET)
 	$(KOS_LOADER) $(TARGET)
